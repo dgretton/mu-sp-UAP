@@ -1,4 +1,4 @@
-from proto import *
+from musp import *
 from math import pi, sin, cos
 import numpy as np
 
@@ -204,9 +204,9 @@ def create_main(beat):
     trackbag = []
     for levels, crystaltest in zip([(0, 1), (0, 1, 2), (0, 1, 2, 4), (0, 1, 2, 3, 4), (2, 3, 4)], beat.split(5)):
         add_tracks_fromto(crystal_compiled_block(crystaltest, levels), trackbag)
-        add_tracks_fromto(violin_pluck_chords(crystaltest), trackbag)
-        add_tracks_fromto(werb_under(crystaltest), trackbag)
-        add_tracks_fromto(apply_each_half(crystaltest, mid_drum_rhythm), trackbag)
+#        add_tracks_fromto(violin_pluck_chords(crystaltest), trackbag)
+#        add_tracks_fromto(werb_under(crystaltest), trackbag)
+#        add_tracks_fromto(apply_each_half(crystaltest, mid_drum_rhythm), trackbag)
 
     return trackbag
 
