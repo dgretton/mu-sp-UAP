@@ -5,11 +5,13 @@ import numpy as np
 tonic_freq = PitchedSound.note_frequency("F#", 3)
 tempo_dur = 2.6/7
 
+datadir = os.path.expanduser("~/.mu-sp")
+
 def aulib(sound_dir):
-    return os.path.join("audio", sound_dir)
+    return os.path.join(datadir, "audio", sound_dir)
 
 def rhlib(rh_name):
-    return os.path.join("an_egg_rh", rh_name + ".rh")
+    return os.path.join(datadir, "rhythm/an_egg_rh", rh_name + ".rh")
 
 def loctrans(far, angle):
     return (far*sin(angle), far*cos(angle))
