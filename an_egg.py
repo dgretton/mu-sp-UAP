@@ -14,7 +14,7 @@ def rhlib(rh_name):
     return os.path.join(datadir, "rhythm/an_egg_rh", rh_name + ".rh")
 
 def loctrans(far, angle):
-    return (far*sin(angle), far*cos(angle))
+    return Location((angle, 0), far) #(far*sin(angle), far*cos(angle), 0)
 
 def halftones_for_scale_deg(degree):
     semitones = [0, 2, 3, 5, 7, 8, 10][int(degree) - 1]
@@ -129,8 +129,8 @@ pluck_violin_sound.populate_with_dir(aulib("plucked_violin_damp"))
 def vibrato_snd_for_beat_frac(beat, deg, f, distance, sound=bow_violin_sound, h=0):
     # h is vibrato hertz
     vibrato_f = lambda t: PitchedSound.temper_ratio**(.25/(1.0 + np.exp(-t * 3))*sin(t*h*(2*pi)))
-    beat.attach(ClippedSound(ResampledSound(sound.for_pitch(deg_freq(float(deg))), vibrato_f, cache=False), tempo_dur*f),
-            loctrans(distance, -pi/3))
+    beat.attach(ClippedSound(ResampledSound(sound.for_pitch(deg_freq(float(deg))), vibrato_f,
+        cache=False), tempo_dur*f), loctrans(distance, -pi/3))
 
 def violin_pluck_chords(beat):
     violin1 = Track("Violin me once!", Sound.default_rate)
@@ -180,7 +180,7 @@ def werb_under(beat):
 
 random_mid_drum = RandomSound()
 random_mid_drum.populate_with_dir(aulib("snares_off"))
-mid_drum = SpreadSound(random_mid_drum, .2, .2, 0, 1)
+mid_drum = SpreadSound(random_mid_drum, (.2, .2, 0), 0, 1)
 
 def descending_snaresoff_tuple(beat, n):
     beats = [beat] if n is 1 else beat.split_even(n)
@@ -204,9 +204,9 @@ def create_main(beat):
     trackbag = []
     for levels, crystaltest in zip([(0, 1), (0, 1, 2), (0, 1, 2, 4), (0, 1, 2, 3, 4), (2, 3, 4)], beat.split(5)):
         add_tracks_fromto(crystal_compiled_block(crystaltest, levels), trackbag)
-#        add_tracks_fromto(violin_pluck_chords(crystaltest), trackbag)
-#        add_tracks_fromto(werb_under(crystaltest), trackbag)
-#        add_tracks_fromto(apply_each_half(crystaltest, mid_drum_rhythm), trackbag)
+        add_tracks_fromto(violin_pluck_chords(crystaltest), trackbag)
+        add_tracks_fromto(werb_under(crystaltest), trackbag)
+        add_tracks_fromto(apply_each_half(crystaltest, mid_drum_rhythm), trackbag)
 
     return trackbag
 
