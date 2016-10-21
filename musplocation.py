@@ -11,8 +11,13 @@ class Location:
             (theta, phi), r = coordinates
             self._spherical = ((float(theta), float(phi)), float(r))
             self._cartesian = None
-        print astf
-        self.astf = astf
+        if astf:
+            if any([k != "astf" for k in astf]):
+                print "That's not an arguement you can use in a location, silly!"
+                exit()
+            self.astf = astf["astf"]
+        else:
+            self.astf = None
 
     def spherical(self):
         if not self._spherical:
@@ -25,7 +30,7 @@ class Location:
     def cartesian(self):
         if not self._cartesian:
             ((theta, phi), r) = self._spherical
-            self._cartesian = r*cos(theta), r*sin(theta), r*sin(phi)
+            self._cartesian = r*cos(theta)*cos(phi), r*sin(theta)*cos(phi), r*sin(phi)
         return self._cartesian
 
     def __iter__(self):
