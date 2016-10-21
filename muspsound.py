@@ -70,6 +70,18 @@ class Sound:
         pass
 
     def _to_stereo(self, rate, mono_data, location):
+        if Sound.quick_play:
+            quick_data = np.hstack((np.zeros((int(delays.max() * rate) + 1,)), mono_data))
+            return np.vstack((quick_data, quick_data)) * decays
+        padded_data = np.hstack((mono_data, np.zeros((int(delays.max() * rate) + 1,))))
+        # A shift of n is realized by a multiplication by exp(2pi*n*w/T) (but it can be fractional!)
+        transform = np.tile(np.fft.rfft(padded_data), (2, 1))
+        exp_coeff = -2j * pi * rate / len(padded_data)
+        transformed = transform * np.exp(exp_coeff * delays * np.tile(np.arange(transform.shape[1]), (2, 1)))
+        return np.fft.irfft(transformed) * decays
+
+    def _usual_astf(self, rate, location)
+
         try:
             # Not useful to specify 3D in cartesian. If there are only two values, xy.
             # Also "backwards compatibility." Yeah.
@@ -80,20 +92,21 @@ class Sound:
             # Whole plane is inclined by phi about ears axis, so only this x, y pair needed
             x = r*np.cos(theta)
             y = r*np.sin(theta)
-        
+
         left_dist = sqrt((x + Sound.ear_separation / 2)**2 + y*y)
         right_dist = sqrt((x - Sound.ear_separation / 2)**2 + y*y)
         decays = np.array([[Sound.standard_distance/left_dist], [Sound.standard_distance/right_dist]])
         delays = np.array([[left_dist / Sound.c_sound], [right_dist / Sound.c_sound]])
-        if Sound.quick_play:
-            quick_data = np.hstack((np.zeros((int(delays.max() * rate) + 1,)), mono_data))
-            return np.vstack((quick_data, quick_data)) * decays
-        padded_data = np.hstack((mono_data, np.zeros((int(delays.max() * rate) + 1,))))
+        # use a relatively long block, half a second
+        impulse_samples = rate / 2
+        # use 20% more samples than needed for the maximum delay
+        overlap_samples = int(max(delays) * 1.2)
+        overall_samples = impulse_samples + overlap_samples
         # A shift of n is realized by a multiplication by exp(2pi*n*w/T) (but it can be fractional!)
-        transform = np.tile(np.fft.rfft(padded_data), (2, 1))
-        exp_coeff = -2j * pi * rate / len(padded_data)
-        transformed = transform * np.exp(exp_coeff * delays * np.tile(np.arange(transform.shape[1]), (2, 1)))
-        return np.fft.irfft(transformed) * decays
+        exp_coeff = -2j * pi * rate / overall_samples
+        transfer_func = np.exp(exp_coeff * delays * np.tile(np.arange(overall_samples), (2, 1))) 
+        return (transfer_func, impulse_samples)
+        
 
     def _read_mono_data(self, filename):
         filerate, data = wavfile.read(filename)
