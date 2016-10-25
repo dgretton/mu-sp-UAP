@@ -1,4 +1,4 @@
-from musp import Track
+from musp import Track, Location
 import os, contextlib, wave
 import numpy as np
 from math import sqrt, atan2, log, pi
@@ -6,9 +6,6 @@ import scipy.io.wavfile as wavfile
 
 class Sound:
 
-    ear_separation = .2
-    standard_distance = .2 # the distance at which a sound is imagined to be heard when it's at unit volume
-    c_sound = 344.0
     quick_play = False
     default_rate = 44100
 
@@ -31,7 +28,7 @@ class Sound:
     def render_from(self, location, universal_cache={}):
         if self.cache_status == Sound.CacheStatus.no_cache:
             return self._render_from(location)
-        tag = self.cache_tag + Sound.location_tag(location)
+        tag = self.cache_tag + Location(location).cache_tag()
         if self.cache_status == Sound.CacheStatus.instant_cache:
             cached = universal_cache.get(tag, self._render_from(location))
             universal_cache[tag] = cached
@@ -41,6 +38,7 @@ class Sound:
             if isinstance(cached, tuple):
                 # Hit! Another sound similar enough to this one to replace it
                 # was rendered here enough times in a row that it was cached.
+                print "got a cache!"
                 return cached 
             hits = cached + 1
             if hits == Sound.CacheStatus.hits_before_cache:
@@ -53,34 +51,23 @@ class Sound:
             print "Unknown cache status?? okaaay...?"
             exit()
 
-    @staticmethod
-    def location_tag(location):
-        try:
-            r, theta, phi = location
-        except:
-            # Only plane coordinates given... Assume phi = 0
-            x, y = location
-            r, theta, phi = sqrt(x*x + y*y), atan2(y, x), 0
-        r_bin = int(log(r, 1.1))
-        theta_bin = int(theta/pi*180/4) # 4-degree bins
-        phi_bin = int(phi/pi*180/4)
-        return '@' + str(r_bin) + '_' + str(theta_bin) + '_' + str(phi_bin)
-
     def duration(self):
         pass
 
     def _to_stereo(self, rate, mono_data, location):
         if Sound.quick_play:
+            decays = np.array(zip(Location(location).decays_at_ears()))
+            delays = np.array(zip(Location(location).delays_to_ears()))
             quick_data = np.hstack((np.zeros((int(delays.max() * rate) + 1,)), mono_data))
             return np.vstack((quick_data, quick_data)) * decays
-        padded_data = np.hstack((mono_data, np.zeros((int(delays.max() * rate) + 1,))))
-        # A shift of n is realized by a multiplication by exp(2pi*n*w/T) (but it can be fractional!)
-        transform = np.tile(np.fft.rfft(padded_data), (2, 1))
-        exp_coeff = -2j * pi * rate / len(padded_data)
-        transformed = transform * np.exp(exp_coeff * delays * np.tile(np.arange(transform.shape[1]), (2, 1)))
-        return np.fft.irfft(transformed) * decays
+        astf_data, orig_filter_length = self._usual_astf(rate, location)
+        padded_data = np.hstack((mono_data, np.zeros((1,))))
+        transform = np.tile(np.fft.rfft(padded_data[:astf_data.shape[1]*2 - 1]), (2, 1))
+        transformed = transform * astf_data
+        transformed_back = np.fft.irfft(transformed)
+        return np.hstack((transformed_back, np.zeros((2, len(mono_data) - transformed_back.shape[1]))))
 
-    def _usual_astf(self, rate, location)
+    def _usual_astf(self, rate, location):
 
         try:
             # Not useful to specify 3D in cartesian. If there are only two values, xy.
@@ -93,20 +80,18 @@ class Sound:
             x = r*np.cos(theta)
             y = r*np.sin(theta)
 
-        left_dist = sqrt((x + Sound.ear_separation / 2)**2 + y*y)
-        right_dist = sqrt((x - Sound.ear_separation / 2)**2 + y*y)
-        decays = np.array([[Sound.standard_distance/left_dist], [Sound.standard_distance/right_dist]])
-        delays = np.array([[left_dist / Sound.c_sound], [right_dist / Sound.c_sound]])
+        decays = np.array(zip(Location(location).decays_at_ears()))
+        delays = np.array(zip(Location(location).delays_to_ears()))
         # use a relatively long block, half a second
-        impulse_samples = rate / 2
+        orig_filter_length = rate / 20
         # use 20% more samples than needed for the maximum delay
         overlap_samples = int(max(delays) * 1.2)
-        overall_samples = impulse_samples + overlap_samples
+        overall_samples = orig_filter_length + overlap_samples
         # A shift of n is realized by a multiplication by exp(2pi*n*w/T) (but it can be fractional!)
         exp_coeff = -2j * pi * rate / overall_samples
-        transfer_func = np.exp(exp_coeff * delays * np.tile(np.arange(overall_samples), (2, 1))) 
-        return (transfer_func, impulse_samples)
-        
+        transfer_func = decays * np.exp(exp_coeff * delays * \
+                np.tile(np.arange(overall_samples), (2, 1))) 
+        return (transfer_func, orig_filter_length)
 
     def _read_mono_data(self, filename):
         filerate, data = wavfile.read(filename)
@@ -190,18 +175,21 @@ class RandomSound(Sound):
 
 class SpreadSound(Sound):
 
-    def __init__(self, sound, x_spread, y_spread, t_spread,
+    def __init__(self, sound, spread_vector, t_spread,
             num_sounds, num_sounds_spread=0, cache=False):
         self.set_unique_rate(sound.rate)
         self.sound = sound
-        self.x_spread = x_spread
-        self.y_spread = y_spread
+        if min(spread_vector) < 0:
+            print "Can't use a spread vector with negative components. Keep it Quad 1 yall."
+            exit()
+        self.spread_vector = spread_vector
         self.t_spread = t_spread
         self.num_sounds = num_sounds
         self.num_sounds_spread = num_sounds_spread
-        self.cache_tag = "SprSsnd(" + sound.cache_tag + ")xs" + str(int(x_spread*1000)) + \
-                "ys" + str(int(y_spread*1000)) + "ts" + str(int(t_spread*1000)) + "no" + \
-                str(num_sounds) + "ns" + str(num_sounds_spread)
+        self.cache_tag = "SprSnd(" + sound.cache_tag + ")" + \
+                "sv" + str([int(coord*1000) for coord in self.spread_vector]) + \
+                "ts" + str(int(t_spread*1000)) + "no" + str(num_sounds) + \
+                "ns" + str(num_sounds_spread)
         if cache:
             self.cache_status = Sound.CacheStatus.instant_cache
         else:
@@ -218,16 +206,10 @@ class SpreadSound(Sound):
             n = max(int(np.random.normal(self.num_sounds, self.num_sounds_spread)), 0)
         reg_index = 0
         for s in range(n):
-            center_x, center_y = location
-            if self.x_spread == 0:
-                x = center_x
-            else:
-                x = np.random.normal(center_x, self.x_spread) # TODO: Set seeds deterministically so that result for same call is the same
-            if self.y_spread == 0:
-                y = center_y
-            else:
-                y = np.random.normal(center_y, self.y_spread)
-            sound_reg_pt, sound_data = self.sound.render_from((x, y))
+            jittered_location = Location((coord if coord_spread == 0 else \
+                    np.random.normal(coord, coord_spread) for coord, coord_spread in \
+                    zip(location, self.spread_vector)))
+            sound_reg_pt, sound_data = self.sound.render_from(jittered_location)
             if self.t_spread == 0:
                 t = 0
             else:
@@ -240,8 +222,10 @@ class SpreadSound(Sound):
                 start_index = 0
             end_index = start_index + sound_data.shape[1]
             if (end_index) >= stereo_buffer.shape[1]:
-                stereo_buffer = np.hstack((stereo_buffer, np.zeros((2, end_index - stereo_buffer.shape[1] + 1))))
-            stereo_buffer[:, start_index : end_index] = Track._mix(stereo_buffer[:, start_index : end_index], sound_data)
+                stereo_buffer = np.hstack((stereo_buffer, np.zeros(
+                    (2, end_index - stereo_buffer.shape[1] + 1))))
+            stereo_buffer[:, start_index : end_index] = Track._mix(
+                    stereo_buffer[:, start_index : end_index], sound_data)
         return (float(reg_index)/self.rate, stereo_buffer)
 
 class ClippedSound(Sound):
@@ -308,7 +292,7 @@ class RandomIntervalSound(Sound):
 
     def _render_from(self, location):
         if self.data is None:
-            self.data = self.sound.render_from((0, Sound.standard_distance))[1][0] #  ignore reg pt; take one track; remember it
+            self.data = self.sound.render_from((0, Location.standard_distance, 0))[1][0] #  ignore reg pt; take one track; remember it
         total_samples = len(self.data)
         samples = int(self.interval * self.rate)
         unclaimed_samples = samples

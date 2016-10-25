@@ -5,5 +5,6 @@ from math import log, atan2, sqrt, pi
 
 from muspbeat import Beat
 from musptrack import Track
+from musplocation import Location
 from muspsound import *
 from muspmixer import Mixer
