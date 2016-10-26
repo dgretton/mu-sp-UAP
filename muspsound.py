@@ -1,4 +1,4 @@
-from musp import Track, Location
+from musp import Track, Location, DelayASTF
 import os, contextlib, wave
 import numpy as np
 from math import sqrt, atan2, log, pi
@@ -8,6 +8,7 @@ class Sound:
 
     quick_play = False
     default_rate = 44100
+    default_astf = DelayASTF()
 
     class CacheStatus:
         hits_before_cache = 2
@@ -54,44 +55,24 @@ class Sound:
     def duration(self):
         pass
 
-    def _to_stereo(self, rate, mono_data, location):
+    def _to_stereo(self, rate, mono_data, location, produce_astf=None):
         if Sound.quick_play:
             decays = np.array(zip(Location(location).decays_at_ears()))
             delays = np.array(zip(Location(location).delays_to_ears()))
             quick_data = np.hstack((np.zeros((int(delays.max() * rate) + 1,)), mono_data))
             return np.vstack((quick_data, quick_data)) * decays
-        astf_data, orig_filter_length = self._usual_astf(rate, location)
+        if produce_astf is None:
+            print self.default_astf
+            produce_astf = self.default_astf.produce_tf_for_location(location, rate)
+        astf_data, orig_filter_length = produce_astf()
         padded_data = np.hstack((mono_data, np.zeros((1,))))
         transform = np.tile(np.fft.rfft(padded_data[:astf_data.shape[1]*2 - 1]), (2, 1))
         transformed = transform * astf_data
         transformed_back = np.fft.irfft(transformed)
         return np.hstack((transformed_back, np.zeros((2, len(mono_data) - transformed_back.shape[1]))))
 
-    def _usual_astf(self, rate, location):
-
-        try:
-            # Not useful to specify 3D in cartesian. If there are only two values, xy.
-            # Also "backwards compatibility." Yeah.
-            x, y = location
-        except:
-            # Living life in 3D.
-            r, theta, phi = location
-            # Whole plane is inclined by phi about ears axis, so only this x, y pair needed
-            x = r*np.cos(theta)
-            y = r*np.sin(theta)
-
-        decays = np.array(zip(Location(location).decays_at_ears()))
-        delays = np.array(zip(Location(location).delays_to_ears()))
-        # use a relatively long block, half a second
-        orig_filter_length = rate / 20
-        # use 20% more samples than needed for the maximum delay
-        overlap_samples = int(max(delays) * 1.2)
-        overall_samples = orig_filter_length + overlap_samples
-        # A shift of n is realized by a multiplication by exp(2pi*n*w/T) (but it can be fractional!)
-        exp_coeff = -2j * pi * rate / overall_samples
-        transfer_func = decays * np.exp(exp_coeff * delays * \
-                np.tile(np.arange(overall_samples), (2, 1))) 
-        return (transfer_func, orig_filter_length)
+    def set_default_astf(self, astf):
+        self.default_astf = astf
 
     def _read_mono_data(self, filename):
         filerate, data = wavfile.read(filename)
@@ -116,6 +97,7 @@ class RawSound(Sound):
         self._set_rate_from_file(file_path)
         self.file_path = file_path
         self._duration = None
+        self.default_astf = Sound.default_astf
         self.cache_status = Sound.CacheStatus.smart_cache
         self.cache_tag = "RawS\"" + self.file_path + "\"rg" + str(int(self.reg_pt*1000))
 
@@ -145,6 +127,7 @@ class RandomSound(Sound):
             self.sounds = sounds
             self.update_cache_tag(self.sounds)
         self._duration = None
+        self.default_astf = Sound.default_astf
         if cache:
             self.cache_status = Sound.CacheStatus.instant_cache
         else:
@@ -186,6 +169,7 @@ class SpreadSound(Sound):
         self.t_spread = t_spread
         self.num_sounds = num_sounds
         self.num_sounds_spread = num_sounds_spread
+        self.default_astf = Sound.default_astf
         self.cache_tag = "SprSnd(" + sound.cache_tag + ")" + \
                 "sv" + str([int(coord*1000) for coord in self.spread_vector]) + \
                 "ts" + str(int(t_spread*1000)) + "no" + str(num_sounds) + \
@@ -236,6 +220,7 @@ class ClippedSound(Sound):
         self.clip_duration = clip_duration
         self.margin = margin
         self.cap = Sound.sigmoid(int(margin * self.rate))
+        self.default_astf = Sound.default_astf
         if offset < 0 or offset > clip_duration:
             print "EEEW NEEW You can't initialize a Clipped Sound that might put the registration point off the sample."
             return
@@ -280,6 +265,7 @@ class RandomIntervalSound(Sound):
         self.margin = margin
         self.data = data
         self.cap = Sound.sigmoid(int(margin * self.rate))
+        self.default_astf = Sound.default_astf
         if interval:
             self.cache_tag = "RISsnd(" + sound.cache_tag + ")iv" + str(int(interval*1000))
             if cache:
@@ -331,6 +317,7 @@ class ResampledSound(Sound):
         self.sound = sound
         self.freq_func = np.vectorize(freq_func)
         self._duration = None
+        self.default_astf = Sound.default_astf
         if cache:
             self.cache_status = Sound.CacheStatus.smart_cache
         else:
@@ -445,6 +432,7 @@ class RawPitchedSound(RawSound, PitchedSound):
         self.pitch = pitch
         self.file_path = file_path
         self._duration = None
+        self.default_astf = Sound.default_astf
         self.cache_status = Sound.CacheStatus.smart_cache
         self.cache_tag = "RawPS\"" + self.file_path + "\"rg" + str(int(self.reg_pt*1000)) + \
                 "@p" + str(int(PitchedSound.resolve_pitch(pitch)*1000))
@@ -469,6 +457,7 @@ class RandomPitchedSound(RandomSound, PitchedSound):
             self.sounds = [pitched_sound.for_pitch(self.pitch) for \
                     pitched_sound in self.pitched_sounds]
         self._duration = None
+        self.default_astf = Sound.default_astf
         if cache:
             self.cache_status = Sound.CacheStatus.instant_cache
         else:
