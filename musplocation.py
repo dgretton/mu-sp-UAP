@@ -58,7 +58,26 @@ class Location:
             left_dist = sqrt((x + Location.ear_separation / 2)**2 + y*y)
             right_dist = sqrt((x - Location.ear_separation / 2)**2 + y*y)
             self.eardists = left_dist, right_dist
+        print "WAIT WHAT"
+        print self.eardists
         return self.eardists
+
+    def cartesian_distance_to(self, other):
+        return sqrt(sum([(cs - co)**2 for cs, co in zip(self, other)]))
+
+    @staticmethod
+    def cartesian_distance(l1, l2):
+        return l2.cartesian_distance_to(l1)
+
+    def norm(self):
+        return self.cartesian_distance_to((0, 0, 0))
+
+    def cosine_distance_to(self, other):
+        return sum([cs*co for cs, co in zip(self, other)])/(self.norm()*other.norm())
+
+    @staticmethod
+    def cosine_distance(l1, l2):
+        return l2.cosine_distance(l1)
 
     def cache_tag(self):
         if self.astf:
@@ -69,8 +88,12 @@ class Location:
         phi_bin = int(phi/pi*180/4)
         return '@' + str(r_bin) + '_' + str(theta_bin) + '_' + str(phi_bin)
 
+    def right_half_plane(self):
+        x, y, z = self
+        return Location(abs(x), y, z)
+
     def __str__(self):
-        return "Aural space location at " + str(self.cartesian())
+        return "AS loc " + str(self.cartesian())
 
     def __iter__(self):
         for c in self.cartesian():
@@ -81,4 +104,7 @@ class Location:
         #xs, ys, zs = self.cartesian()
         #xo, yo, zo = other.cartesian()
         #return Location(xs + xo, ys + yo, zs + zo
+    
+    def __eq__(self, other):
+        return self.cartesian_distance_to(other) < .0001
 
