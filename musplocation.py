@@ -58,8 +58,6 @@ class Location:
             left_dist = sqrt((x + Location.ear_separation / 2)**2 + y*y)
             right_dist = sqrt((x - Location.ear_separation / 2)**2 + y*y)
             self.eardists = left_dist, right_dist
-        print "WAIT WHAT"
-        print self.eardists
         return self.eardists
 
     def cartesian_distance_to(self, other):

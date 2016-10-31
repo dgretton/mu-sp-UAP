@@ -65,8 +65,6 @@ class Sound:
         if astf is None:
             astf = self.default_aural_space.astf_for_location(location)
         astf_data, impulse_response_length = astf.generate_astf()
-        print astf
-        print id(astf_data)
         padded_data = np.hstack((mono_data, np.zeros((1,))))
         transform = np.tile(np.fft.rfft(padded_data[:astf_data.shape[1]*2 - 1]), (2, 1))
         transformed = transform * astf_data
