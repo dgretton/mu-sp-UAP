@@ -3,6 +3,7 @@ import os, contextlib, wave
 import numpy as np
 from math import sqrt, atan2, log, pi
 import scipy.io.wavfile as wavfile
+from matplotlib import pyplot as plt
 
 class Sound:
 
@@ -55,17 +56,76 @@ class Sound:
         pass
 
     def _to_stereo(self, rate, mono_data, location):
+        decays = np.array(zip(Location(location).decays_at_ears()))
+        delays = np.array(zip(Location(location).delays_to_ears()))
+        quick_data = np.hstack((np.zeros((int(delays.max() * rate) + 1,)), mono_data))
+        quick_return = np.vstack((quick_data, quick_data)) * decays
         if Sound.quick_play:
-            decays = np.array(zip(Location(location).decays_at_ears()))
-            delays = np.array(zip(Location(location).delays_to_ears()))
-            quick_data = np.hstack((np.zeros((int(delays.max() * rate) + 1,)), mono_data))
-            return np.vstack((quick_data, quick_data)) * decays
-        astf_data, orig_filter_length = self._usual_astf(rate, location)
-        padded_data = np.hstack((mono_data, np.zeros((1,))))
-        transform = np.tile(np.fft.rfft(padded_data[:astf_data.shape[1]*2 - 1]), (2, 1))
-        transformed = transform * astf_data
-        transformed_back = np.fft.irfft(transformed)
-        return np.hstack((transformed_back, np.zeros((2, len(mono_data) - transformed_back.shape[1]))))
+            return quick_return
+        astf_data, impulse_response_length = self._usual_astf(rate, location)
+        #plt.figure()
+        #plt.plot(np.real(np.fft.irfft(astf_data))[0])
+        #plt.show()
+        #print "ok, now we're done."
+        mono_data_length = mono_data.shape[0]
+        print "mono data length:", mono_data_length
+        print "ir length:", impulse_response_length
+        # astf is from rfft, so applies to 2x as many pts:
+        transform_buffer_length = 2*(astf_data.shape[1] - 1)
+        print "transform buffer length:", transform_buffer_length
+        block_length = transform_buffer_length - impulse_response_length + 1
+        print "number of blocks:", mono_data_length/block_length
+        print "supposed leftover mono samples after all full blocks consumed:", mono_data_length % block_length
+        print "supposed length of last block after convolution:", mono_data_length % block_length + impulse_response_length - 1
+
+        transform_buffer = np.empty((2, transform_buffer_length))
+        output_length = mono_data.shape[0] + impulse_response_length - 1
+        output_buffer = np.zeros((2, output_length))
+        for block_start in range(0, output_length, block_length):
+            mono_block_data = list(mono_data[block_start:block_start + block_length])
+            mono_block_size = len(mono_block_data)
+            if mono_block_size == 0:
+                continue
+            transform_buffer[0,:mono_block_size] = mono_block_data
+            transform_buffer[1,:mono_block_size] = mono_block_data
+            transform_buffer[:,mono_block_size:] = 0
+            transform_buffer = np.fft.irfft(np.fft.rfft(transform_buffer) * astf_data)
+            #print transform_buffer.shape
+            #print mono_block_size
+            #print output_buffer[:,block_start:block_start + transform_buffer_length].shape
+            #plt.plot(transform_buffer[0])
+            #plt.figure()
+            #plt.plot(transform_buffer[:,:mono_block_size + impulse_response_length - 1][0])
+            #plt.show()
+            # done this way so that it never broadcasts correctly if I messed up the block lengths
+            output_buffer[:,block_start:block_start + transform_buffer_length] += \
+                    transform_buffer[:,:mono_block_size + impulse_response_length - 1]
+
+        comparison_plot_and_quit = True
+        if comparison_plot_and_quit:
+            try: # This may fail if the particular sound has an even length, so the lengths
+                 # won't match when multiplying the filter. Just quit--eventually some sound will go.
+                padded_impulse_response = np.fft.irfft(astf_data)
+                print "These should be the same:", padded_impulse_response.shape[1], \
+                        transform_buffer_length
+                big_filter = np.fft.rfft(np.hstack((padded_impulse_response,
+                    np.zeros((2, impulse_response_length + mono_data_length - \
+                            transform_buffer_length)))))
+                print mono_data_length + impulse_response_length - 1
+                print big_filter.shape[1]
+                confirm_output_buffer = np.fft.irfft(np.fft.rfft(np.hstack((np.tile(mono_data,
+                    (2, 1)), np.zeros((2, impulse_response_length - 1))))) * big_filter)
+                fig, ax = plt.subplots()
+                ax.plot(confirm_output_buffer[0], label="frequency domain convolution of whole sample")
+                ax.plot(output_buffer[0], label="overlap add method result")
+                ax.plot(quick_return[0], label="sample shifted by nearest integer to delay for comparison")
+                ax.plot((confirm_output_buffer - output_buffer)[0], label="overlap add vs. whole sample convolution difference (error)")
+                legend = ax.legend(loc='upper center', shadow=True)
+                plt.show()
+                exit()
+            except Exception as e:
+                print e
+        return output_buffer
 
     def _usual_astf(self, rate, location):
 
@@ -82,16 +142,16 @@ class Sound:
 
         decays = np.array(zip(Location(location).decays_at_ears()))
         delays = np.array(zip(Location(location).delays_to_ears()))
-        # use a relatively long block, half a second
-        orig_filter_length = rate / 20
+        # use a relatively long block, within an order of a second
+        block_samples = rate / 2.0
         # use 20% more samples than needed for the maximum delay
-        overlap_samples = int(max(delays) * 1.2)
-        overall_samples = orig_filter_length + overlap_samples
+        impulse_samples = int(max(10, *delays * rate)*1.2)
+        overall_samples = block_samples + impulse_samples
         # A shift of n is realized by a multiplication by exp(2pi*n*w/T) (but it can be fractional!)
         exp_coeff = -2j * pi * rate / overall_samples
         transfer_func = decays * np.exp(exp_coeff * delays * \
-                np.tile(np.arange(overall_samples), (2, 1))) 
-        return (transfer_func, orig_filter_length)
+                np.tile(np.arange((overall_samples - 1)/2), (2, 1))) 
+        return (transfer_func, impulse_samples)
 
     def _read_mono_data(self, filename):
         filerate, data = wavfile.read(filename)
