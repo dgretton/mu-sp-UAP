@@ -1,9 +1,9 @@
+import os, json, atexit
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-import os, json, atexit, random
-from musp import Location
 import numpy as np
-from math import pi
+from numpy import exp, pi
+from mpl_toolkits.mplot3d import Axes3D
+from musp import Location
 
 class ASTF:
 
@@ -35,27 +35,48 @@ class AuralSpace:
     def _create_astf(self, location):
         pass
 
+    def apply_decays(self, astf_data, location, start_location=None):
+        decays = np.array(zip(Location(location).decays_at_ears()))
+        if start_location is not None:
+            decays /= np.array(zip(start_location.decays_at_ears()))
+        return astf_data * decays
+
+    def correct_delays(self, astf_data, location, max_delay_samples=None, start_location=None):
+        delays = np.array(zip(Location(location).delays_to_ears()))*self.rate
+        if start_location is not None:
+            delays -= np.array(zip(start_location.delays_to_ears()))*self.rate
+        # delays = np.clip(delays, 0, float('inf')) # neg delay shift ok if correctly cached
+        if max_delay_samples is not None:
+            print "Before compressing delays:", delays
+            def compression_func(x):
+                return np.where(x>0, x/(exp(x) + x), x)
+            delay_fracs = delays/max_delay_samples
+            delays = max_delay_samples*compression_func(delay_fracs)
+            print "After compressing delays:", delays
+        data_len = astf_data.shape[1]
+        overall_samples = (data_len - 1)*2
+        # A shift of n is realized by a multiplication by exp(2pi*n*w/T) (but it can be fractional!)
+        exp_coeff = -2j * pi / overall_samples
+        transfer_func = exp(exp_coeff * delays * \
+                np.tile(np.arange(data_len), (2, 1))) 
+        return astf_data * transfer_func
+
 class EarDelayAuralSpace(AuralSpace):
 
     def _create_astf(self, location):
-        rate = self.rate
-        decays = np.array(zip(Location(location).decays_at_ears()))
-        delays = np.array(zip(Location(location).delays_to_ears()))
-        # use a relatively long block, .1s
-        impulse_response_length = int(rate * .1)
+        # use a relatively long block, within an order of a second
+        block_samples = int(self.rate / 200)
         # use 20% more samples than needed for the maximum delay
-        overlap_samples = int(max(delays) * 1.2)
-        overall_samples = impulse_response_length + overlap_samples
-        # A shift of n is realized by a multiplication by exp(2pi*n*w/T)
-        # (but it can be fractional!)
-        exp_coeff = -2j * pi * rate / overall_samples
+        delayr, delayl = location.delays_to_ears()
+        impulse_samples = int(max(10, delayr*self.rate, delayl*self.rate)*1.2)
 
-        def edas_produce_astf():
-            transfer_func = decays * np.exp(exp_coeff * delays * \
-                    np.tile(np.arange(overall_samples), (2, 1))) 
-            return (transfer_func, impulse_response_length)
+        def edas_astf_generator():
+            tabula_rasa = np.ones((2, (block_samples + impulse_samples)/2 + 1))
+            delayed = self.correct_delays(tabula_rasa, location)
+            decayed = self.apply_decays(delayed, location)
+            return decayed, impulse_samples
 
-        return ASTF(edas_produce_astf,  location)
+        return ASTF(edas_astf_generator, location)
 
 
 class DiscreteAuralSpace(AuralSpace):
@@ -89,16 +110,14 @@ class DiscreteAuralSpace(AuralSpace):
                     astf_data_generator = lambda f=filepath: (np.load(f), ir_length)
                     x, y, z = meta[DiscreteAuralSpace.json_loc_property]
                     location = Location(float(x), float(y), float(z))
-                    post_process = self.wrapped_as._astf_post_processor()
                     print "AAAAH WE LOADED AN ASTF!!"
-                    self.astfs.append(ASTF(astf_data_generator, location, post_process, filename))
+                    self.astfs.append(ASTF(astf_data_generator, location, filename))
         print "ALL OF THESE GREAT THINGS WERE ADDED RIGHT AT THE BEGINNING:"
         for astf in self.astfs:
             print astf
         atexit.register(self._save_out_cache)
 
     def astf_for_location(self, location):
-        print "LOOKIE HERE", location
         astf, = self.wrapped_as.n_nearest_astfs(1, location)
         return astf
 
@@ -119,7 +138,7 @@ class DiscreteAuralSpace(AuralSpace):
             else:
                 nearest.append(astf)
         nearest_post = [ASTF(a.astf_data_generator, location,
-            post_processor=self.wrapped_as._astf_post_processor(), filename=a.filename) for
+            post_processor=self.wrapped_as._astf_post_processor(location), filename=a.filename) for
             a in nearest]
         return nearest_post
 
@@ -127,8 +146,16 @@ class DiscreteAuralSpace(AuralSpace):
         print "That discrete aural space got no way to make new astfs out of thin air..."
         exit()
 
-    def _astf_post_processor(self):
-        pass
+    def _astf_post_processor(self, destination_location):
+        # default astf post processor applies shifts and decays assuming that the loaded astf
+        # is at the standard distance; override if not
+        def vanilla_post_processor(loc, data_from_cache, ir_len):
+            filter_length = (data_from_cache.shape[1] - 1)*2
+            delayed = self.correct_delays(data_from_cache, destination_location,
+                    max_delay_samples=(filter_length - ir_len), start_location=loc)
+            decayed = self.apply_decays(delayed, destination_location, start_location=loc)
+            return (decayed, ir_len)
+        return vanilla_post_processor
 
     def _saved_astf_for_location(self, location):
         for astf in self.astfs:
@@ -159,6 +186,7 @@ class DiscreteAuralSpace(AuralSpace):
         meta_map = {}
         for astf in self.astfs:
             if astf.data is None:
+                print "So that's it."
                 continue
             filename = astf.filename if astf.filename else self.wrapped_as._cache_name_for_astf(astf)
             filepath = os.path.join(self.unique_cache_dir, filename)
@@ -172,19 +200,17 @@ class DiscreteAuralSpace(AuralSpace):
         with open(self.cache_metadata_file, 'w') as mdf:
             json.dump(meta_map, mdf)
 
+
 class DiscreteEarDelayAS(EarDelayAuralSpace, DiscreteAuralSpace):
     from math import pi
-    num_points = 10
-    points = [Location((pi*2/num_points*(i-num_points/2), 0), 2) for i in range(num_points)]
+    num_points = 100
+    points = [Location((pi*2/num_points*(i-num_points/2), 0), Location.standard_distance)
+            for i in range(num_points)]
 
     def n_nearest_locations(self, n, location):
         return sorted(DiscreteEarDelayAS.points, key=lambda l:l.cosine_distance_to(location))[:n]
 
-    def _astf_post_processor(self):
-        def dedas_post_processor(location, data, ir_length):
-            decays = np.array(zip(Location(location).decays_at_ears()))
-            return decays * data, ir_length
-        return dedas_post_processor
+
 
 discretized_delay_as = lambda rate: DiscreteAuralSpace("ddas", rate,
         wrapped_as_class=DiscreteEarDelayAS)

@@ -14,7 +14,7 @@ class Track:
         self._start_time = start_time
         self.volume = volume
         self.reg_index = 0
-        self.pre_padding_samples = padding * self.rate
+        self.pre_padding_samples = int(padding * self.rate)
         if end_padding is None:
             self.post_padding_samples = self.pre_padding_samples
         else:
