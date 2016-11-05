@@ -14,11 +14,8 @@ def aulib(sound_dir):
 def rhlib(rh_name):
     return os.path.join(datadir, "rhythm/an_egg_rh", rh_name + ".rh")
 
-def loctrans(far, angle, places=[0, .1]):
-    places[0] += 6.0/15
-    places[1] += 1.5
-    print places[1]
-    return Location((places[0], 0), places[1])
+def loctrans(far, angle):
+    return Location((angle, 0), far)
 
 def halftones_for_scale_deg(degree):
     semitones = [0, 2, 3, 5, 7, 8, 10][int(degree) - 1]
@@ -206,9 +203,7 @@ def mid_drum_rhythm(beat):
 
 def create_main(beat):
     trackbag = []
-    for levels, crystaltest in zip(
-            [(0, 1)],
-            #[(0, 1), (0, 1, 2), (0, 1, 2, 4), (0, 1, 2, 3, 4), (2, 3, 4)], 
+    for levels, crystaltest in zip([(0, 1), (0, 1, 2), (0, 1, 2, 4), (0, 1, 2, 3, 4), (2, 3, 4)], 
             beat.split(2)):
         add_tracks_fromto(crystal_compiled_block(crystaltest, levels), trackbag)
         #add_tracks_fromto(violin_pluck_chords(crystaltest), trackbag)

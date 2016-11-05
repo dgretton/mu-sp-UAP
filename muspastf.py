@@ -21,7 +21,6 @@ class ASTF:
     def generate_astf(self):
         if self.data_c.data is None:
             self.data_c.data, self.data_c.ir_length = self.astf_data_generator()
-            print "ok, so we got", self.data_c.data, "\"filter length\"", self.data_c.data.shape[1]*2 + 1,  self.data_c.ir_length
         return self.post_processor(self.location, self.data_c.data, self.data_c.ir_length)
 
     def with_post_processor(self, pp):
@@ -57,7 +56,7 @@ class ASTF:
 class AuralSpace:
 
     def astf_for_location(self, location):
-        return self._create_astf(location)
+        return self._create_astf(Location(location))
 
     def apply_decays(self, astf_data, location, start_location=None):
         decays = np.array(zip(Location(location).decays_at_ears()))
@@ -71,16 +70,13 @@ class AuralSpace:
         if start_location is not None:
             if start_location == location:
                 return astf_data, ir_length
+            # neg delay shift ok if correctly cached
             delays -= np.array(zip(Location(start_location).delays_to_ears()))*self.rate
-        # delays = np.clip(delays, 0, float('inf')) # neg delay shift ok if correctly cached
         if max_delay_samples is not None:
-            print "limiting delay to", max_delay_samples
-            print "Before compressing delays:", delays
             def compression_func(x):
                 return np.where(x>0, x/(exp(x) + x), x)
             delay_fracs = delays/max_delay_samples
             delays = max_delay_samples*compression_func(delay_fracs)
-            print "After compressing delays:", delays
         data_len = astf_data.shape[1]
         overall_samples = (data_len - 1)*2
         # A shift of n is realized by a multiplication by exp(2pi*n*w/T) (but it can be fractional!)
@@ -101,13 +97,11 @@ class EarDelayAuralSpace(AuralSpace):
         # use 10% more samples than needed for the maximum delay
         delayr, delayl = location.delays_to_ears()
         impulse_samples = int(max(delayr*self.rate, delayl*self.rate)*1.2)
-        print "this is what we've decided to make: impulse length", impulse_samples, \
-                "block samples", block_samples, "anticipated filter size", (block_samples + 
-                        impulse_samples)/2 + 1
 
         def edas_astf_generator():
             tabula_rasa = np.ones((2, (block_samples + impulse_samples)/2 + 1))
-            delayed, mod_ir_length = self.correct_delays(tabula_rasa, impulse_samples, location, max_delay_samples=block_samples)
+            delayed, mod_ir_length = self.correct_delays(tabula_rasa, impulse_samples,
+                    location, max_delay_samples=block_samples)
             decayed = self.apply_decays(delayed, location)
             return decayed, mod_ir_length
 
@@ -145,7 +139,6 @@ class DiscreteAuralSpace(AuralSpace):
                     astf_data_generator = lambda f=filepath, irl=ir_length: (np.load(f), irl)
                     x, y, z = meta[DiscreteAuralSpace.json_loc_property]
                     location = Location(float(x), float(y), float(z))
-                    print "AAAAH WE LOADED AN ASTF!!"
                     self.astfs.append(ASTF(astf_data_generator, location, filename))
         print "ALL OF THESE GREAT THINGS WERE ADDED RIGHT AT THE BEGINNING:"
         for astf in self.astfs:
@@ -153,12 +146,13 @@ class DiscreteAuralSpace(AuralSpace):
         atexit.register(self._save_out_cache)
 
     def astf_for_location(self, location):
-        astf, = self.wrapped_as.n_nearest_astfs(1, location)
+        astf, = self.wrapped_as.n_nearest_astfs(1, Location(location))
         return astf
 
     def n_nearest_locations(self, n, location):
         # default behavior only makes sense when whole cache is populated in advance
-        nearest = sorted(self.astfs, key=lambda a: self.dist_metric(a.location, location))[:n]
+        nearest = sorted(self.astfs,
+                key=lambda a: self.dist_metric(a.location, Location(location)))[:n]
         return [astf.location for astf in nearest]
 
     def n_nearest_astfs(self, n, location):
@@ -236,7 +230,8 @@ class DiscreteEarDelayAS(DiscreteAuralSpace, EarDelayAuralSpace):
             for i in range(num_points)]
 
     def n_nearest_locations(self, n, location):
-        return sorted(DiscreteEarDelayAS.points, key=lambda l:l.cosine_distance_to(location))[:n]
+        return sorted(DiscreteEarDelayAS.points,
+                key=lambda l:l.cosine_distance_to(Location(location)))[:n]
 
 
 

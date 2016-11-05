@@ -7,7 +7,14 @@ class Location:
     standard_distance = .2
     c_sound = 344.0
 
-    def __init__(self, *coordinates, **astf):
+    def __new__(typ, *args, **kwargs):
+        # basically, when "casting" to a Location, if it already is one, leave it.
+        # fine because locations are immutable
+        if isinstance(args[0], Location):
+            return args[0]
+        return object.__new__(typ, *args, **kwargs)
+
+    def __init__(self, *coordinates):
         def try_unwrap(coordinates):
             try:
                 x, y, z = coordinates
@@ -21,13 +28,6 @@ class Location:
             try_unwrap(coordinates[0])
         except:
             try_unwrap(coordinates)
-        if astf:
-            if any([k != "astf" for k in astf]):
-                print "That's not an argument you can use in a location, silly!"
-                exit()
-            self.astf = astf["astf"]
-        else:
-            self.astf = None
         self.eardists = None
 
     def spherical(self):
@@ -78,8 +78,6 @@ class Location:
         return l2.cosine_distance(l1)
 
     def cache_tag(self):
-        if self.astf:
-            return self.astf.cache_tag(location)
         (theta, phi), r = self.spherical()
         r_bin = int(log(r, 1.1))
         theta_bin = int(theta/pi*180/4) # 4-degree bins
