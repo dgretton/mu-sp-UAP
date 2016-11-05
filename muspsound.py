@@ -1,4 +1,4 @@
-from musp import Track, Location, DiscreteEarDelayAS, discretized_delay_as
+from musp import Track, Location, EarDelayAuralSpace, DiscreteEarDelayAS, discretized_delay_as
 import os, contextlib, wave
 import numpy as np
 from math import sqrt, atan2, log, pi
@@ -10,7 +10,6 @@ class Sound:
     quick_play = False
     default_rate = 44100
     default_aural_space = discretized_delay_as(default_rate)
-                    # DiscreteEarDelayAS("default_discrete_ear_delay_as", default_rate)
 
     class CacheStatus:
         hits_before_cache = 2
@@ -59,9 +58,10 @@ class Sound:
 
     def set_default_aural_space(self, aural_space):
         self.default_aural_space = aural_space
-
+    
     def _to_stereo(self, rate, mono_data, location, astf=None):
-        comparison_plot_and_quit = True
+        (_, _), r = location.spherical()
+        comparison_plot_and_quit = False
         if comparison_plot_and_quit or Sound.quick_play:
             decays = np.array(zip(Location(location).decays_at_ears()))
             delays = np.array(zip(Location(location).delays_to_ears()))
@@ -72,11 +72,9 @@ class Sound:
             return quick_return
 
         if astf is None:
+            print "calling this method for astf:", self.default_aural_space.astf_for_location
             astf = self.default_aural_space.astf_for_location(location)
         astf_data, impulse_response_length = astf.generate_astf()
-        print "making graph for impulse response"
-        #plt.plot(np.fft.irfft(astf_data[0]))
-        #plt.show()
         mono_data_length = mono_data.shape[0]
         print "mono data length:", mono_data_length
         print "ir length:", impulse_response_length
@@ -117,19 +115,26 @@ class Sound:
             padded_impulse_response = np.fft.irfft(astf_data)
             print "These should be the same:", padded_impulse_response.shape[1], \
                     transform_buffer_length
-            big_filter = np.fft.rfft(np.hstack((padded_impulse_response,
-                np.zeros((2, impulse_response_length + mono_data_length - \
-                        transform_buffer_length)))))
-            print mono_data_length + impulse_response_length - 1
-            print big_filter.shape[1]
-            confirm_output_buffer = np.fft.irfft(np.fft.rfft(np.hstack((np.tile(mono_data,
-                (2, 1)), np.zeros((2, impulse_response_length - 1))))) * big_filter)
             fig, ax = plt.subplots()
-            ax.plot(confirm_output_buffer[0], label="frequency domain convolution of whole sample")
+            try:
+                big_filter = np.fft.rfft(np.hstack((padded_impulse_response,
+                    np.zeros((2, impulse_response_length + mono_data_length - \
+                            transform_buffer_length)))))
+                print mono_data_length + impulse_response_length - 1
+                print big_filter.shape[1]
+                confirm_output_buffer = np.fft.irfft(np.fft.rfft(np.hstack((np.tile(mono_data,
+                    (2, 1)), np.zeros((2, impulse_response_length - 1))))) * big_filter)
+                ax.plot(confirm_output_buffer[0], label="frequency domain convolution of whole sample")
+                ax.plot((confirm_output_buffer - output_buffer)[0], label="overlap add vs. whole sample convolution difference (error)")
+            except Exception:
+                pass
             ax.plot(output_buffer[0], label="overlap add method result")
             ax.plot(quick_return[0], label="sample shifted by nearest integer to delay for comparison")
-            ax.plot((confirm_output_buffer - output_buffer)[0], label="overlap add vs. whole sample convolution difference (error)")
             legend = ax.legend(loc='upper center', shadow=True)
+            plt.figure()
+            print "making graph for impulse response"
+            plt.plot(np.fft.irfft(astf_data[0]))
+            plt.scatter([impulse_response_length], [0])
             plt.show()
             exit()
             #except Exception as e:

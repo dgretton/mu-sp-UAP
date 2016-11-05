@@ -15,8 +15,8 @@ def rhlib(rh_name):
     return os.path.join(datadir, "rhythm/an_egg_rh", rh_name + ".rh")
 
 def loctrans(far, angle, places=[0, .1]):
-    places[0] += 6.0/20
-    places[1] += .1
+    places[0] += 6.0/15
+    places[1] += 1.5
     print places[1]
     return Location((places[0], 0), places[1])
 

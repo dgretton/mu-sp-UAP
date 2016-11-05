@@ -1,4 +1,4 @@
-import os, json, atexit
+import os, json, atexit, copy
 import matplotlib.pyplot as plt
 import numpy as np
 from numpy import exp, pi
@@ -11,29 +11,53 @@ class ASTF:
         self.location = location
         # Generator goes to get the data we want to save to disk (maybe from disk), and
         # post-processor does some lightweight manipulation of the loaded data before returning it.
-        # (you wouldn't want to save angle-dependent transfer functions that have been scaled
-        # for distance, right?)
+        # (you wouldn't want to save angle-dependent transfer functions that have been scaled/
+        # delayed for distance, right?)
         self.astf_data_generator = astf_data_generator
         self.post_processor = (lambda l,d,irl:(d,irl)) if post_processor is None else post_processor
         self.filename = filename
-        self.data = None
-        self.ir_length = None
+        self.data_c = ASTF.DataContainer()
 
     def generate_astf(self):
-        if self.data is None:
-            self.data, self.ir_length = self.astf_data_generator()
-        return self.post_processor(self.location, self.data, self.ir_length)
+        if self.data_c.data is None:
+            self.data_c.data, self.data_c.ir_length = self.astf_data_generator()
+            print "ok, so we got", self.data_c.data, "\"filter length\"", self.data_c.data.shape[1]*2 + 1,  self.data_c.ir_length
+        return self.post_processor(self.location, self.data_c.data, self.data_c.ir_length)
+
+    def with_post_processor(self, pp):
+        new_astf = copy.copy(self) # retain data container, generator
+        new_astf.post_processor = pp
+        return new_astf
+
+    def has_data(self):
+        return self.data_c.data is not None
+
+    def data(self):
+        return self.data_c.data
+
+    def ir_length(self):
+        return self.data_c.ir_length
 
     def __str__(self):
         return "ASTF @" + str(self.location) + " with generator " + str(self.astf_data_generator) + \
              (" from " + self.filename if self.filename is not None else '') + \
-             (" impulse " + str(self.ir_length) + " samples long" if self.ir_length else '') + \
-             (" with data @" + str(id(self.data)) if self.data is not None else '')
+             (" impulse " + str(self.data_c.ir_length) + " samples long with data @" + \
+                 str(id(self.data_c.data)) if self.has_data() else '')
+
+    class DataContainer:
+        def __init__(self):
+            self.data = None
+            self.ir_length = None
+
+        def __iter__(self):
+            yield data
+            yield self.ir_length
+        
 
 class AuralSpace:
 
-    def _create_astf(self, location):
-        pass
+    def astf_for_location(self, location):
+        return self._create_astf(location)
 
     def apply_decays(self, astf_data, location, start_location=None):
         decays = np.array(zip(Location(location).decays_at_ears()))
@@ -41,12 +65,16 @@ class AuralSpace:
             decays /= np.array(zip(start_location.decays_at_ears()))
         return astf_data * decays
 
-    def correct_delays(self, astf_data, location, max_delay_samples=None, start_location=None):
+    def correct_delays(self, astf_data, ir_length, location,
+            max_delay_samples=None, start_location=None):
         delays = np.array(zip(Location(location).delays_to_ears()))*self.rate
         if start_location is not None:
-            delays -= np.array(zip(start_location.delays_to_ears()))*self.rate
+            if start_location == location:
+                return astf_data, ir_length
+            delays -= np.array(zip(Location(start_location).delays_to_ears()))*self.rate
         # delays = np.clip(delays, 0, float('inf')) # neg delay shift ok if correctly cached
         if max_delay_samples is not None:
+            print "limiting delay to", max_delay_samples
             print "Before compressing delays:", delays
             def compression_func(x):
                 return np.where(x>0, x/(exp(x) + x), x)
@@ -59,22 +87,29 @@ class AuralSpace:
         exp_coeff = -2j * pi / overall_samples
         transfer_func = exp(exp_coeff * delays * \
                 np.tile(np.arange(data_len), (2, 1))) 
-        return astf_data * transfer_func
+        return astf_data * transfer_func, int(ir_length + max(*delays))
 
 class EarDelayAuralSpace(AuralSpace):
 
+    def __init__(self, name, rate):
+        self.name = name
+        self.rate = rate
+
     def _create_astf(self, location):
         # use a relatively long block, within an order of a second
-        block_samples = int(self.rate / 200)
-        # use 20% more samples than needed for the maximum delay
+        block_samples = int(self.rate * .5)
+        # use 10% more samples than needed for the maximum delay
         delayr, delayl = location.delays_to_ears()
-        impulse_samples = int(max(10, delayr*self.rate, delayl*self.rate)*1.2)
+        impulse_samples = int(max(delayr*self.rate, delayl*self.rate)*1.2)
+        print "this is what we've decided to make: impulse length", impulse_samples, \
+                "block samples", block_samples, "anticipated filter size", (block_samples + 
+                        impulse_samples)/2 + 1
 
         def edas_astf_generator():
             tabula_rasa = np.ones((2, (block_samples + impulse_samples)/2 + 1))
-            delayed = self.correct_delays(tabula_rasa, location)
+            delayed, mod_ir_length = self.correct_delays(tabula_rasa, impulse_samples, location, max_delay_samples=block_samples)
             decayed = self.apply_decays(delayed, location)
-            return decayed, impulse_samples
+            return decayed, mod_ir_length
 
         return ASTF(edas_astf_generator, location)
 
@@ -107,7 +142,7 @@ class DiscreteAuralSpace(AuralSpace):
                 for filename, meta in json.load(mdf).iteritems():
                     ir_length = int(meta[DiscreteAuralSpace.json_ir_length_property])
                     filepath = os.path.join(self.unique_cache_dir, filename)
-                    astf_data_generator = lambda f=filepath: (np.load(f), ir_length)
+                    astf_data_generator = lambda f=filepath, irl=ir_length: (np.load(f), irl)
                     x, y, z = meta[DiscreteAuralSpace.json_loc_property]
                     location = Location(float(x), float(y), float(z))
                     print "AAAAH WE LOADED AN ASTF!!"
@@ -137,24 +172,18 @@ class DiscreteAuralSpace(AuralSpace):
                 nearest.append(new_astf)
             else:
                 nearest.append(astf)
-        nearest_post = [ASTF(a.astf_data_generator, location,
-            post_processor=self.wrapped_as._astf_post_processor(location), filename=a.filename) for
-            a in nearest]
-        return nearest_post
-
-    def _create_astf(self, location):
-        print "That discrete aural space got no way to make new astfs out of thin air..."
-        exit()
+        return [a.with_post_processor(self.wrapped_as._astf_post_processor(location))
+                for a in nearest]
 
     def _astf_post_processor(self, destination_location):
         # default astf post processor applies shifts and decays assuming that the loaded astf
         # is at the standard distance; override if not
         def vanilla_post_processor(loc, data_from_cache, ir_len):
             filter_length = (data_from_cache.shape[1] - 1)*2
-            delayed = self.correct_delays(data_from_cache, destination_location,
+            delayed, mod_ir_len = self.correct_delays(data_from_cache, ir_len, destination_location,
                     max_delay_samples=(filter_length - ir_len), start_location=loc)
             decayed = self.apply_decays(delayed, destination_location, start_location=loc)
-            return (decayed, ir_len)
+            return (decayed, mod_ir_len)
         return vanilla_post_processor
 
     def _saved_astf_for_location(self, location):
@@ -185,23 +214,22 @@ class DiscreteAuralSpace(AuralSpace):
             os.mkdir(self.unique_cache_dir)
         meta_map = {}
         for astf in self.astfs:
-            if astf.data is None:
-                print "So that's it."
+            if not astf.has_data():
                 continue
             filename = astf.filename if astf.filename else self.wrapped_as._cache_name_for_astf(astf)
             filepath = os.path.join(self.unique_cache_dir, filename)
             if not os.path.exists(filepath):
                 with open(filepath, 'w+') as tf_file:
-                    np.save(tf_file, astf.data)
+                    np.save(tf_file, astf.data())
             meta_map[filename] = {DiscreteAuralSpace.json_loc_property:
                                         tuple(c for c in astf.location),
                                   DiscreteAuralSpace.json_ir_length_property:
-                                        astf.ir_length}
+                                        astf.ir_length()}
         with open(self.cache_metadata_file, 'w') as mdf:
             json.dump(meta_map, mdf)
 
 
-class DiscreteEarDelayAS(EarDelayAuralSpace, DiscreteAuralSpace):
+class DiscreteEarDelayAS(DiscreteAuralSpace, EarDelayAuralSpace):
     from math import pi
     num_points = 100
     points = [Location((pi*2/num_points*(i-num_points/2), 0), Location.standard_distance)
@@ -212,7 +240,6 @@ class DiscreteEarDelayAS(EarDelayAuralSpace, DiscreteAuralSpace):
 
 
 
-discretized_delay_as = lambda rate: DiscreteAuralSpace("ddas", rate,
-        wrapped_as_class=DiscreteEarDelayAS)
+discretized_delay_as = lambda rate: DiscreteEarDelayAS("ddas", rate)
 
 KEMAR_aural_space = lambda rate: DiscreteAuralSpace("KEMAR", rate)
