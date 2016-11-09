@@ -1,8 +1,10 @@
 import os, json, atexit, copy
 import matplotlib.pyplot as plt
 import numpy as np
+import scipy.io.wavfile as wavfile
 from numpy import exp, pi
 from mpl_toolkits.mplot3d import Axes3D
+from math import radians
 from musp import Location
 
 class ASTF:
@@ -53,7 +55,7 @@ class ASTF:
             yield self.ir_length
         
 
-class AuralSpace:
+class AuralSpace(object):
 
     def astf_for_location(self, location):
         return self._create_astf(Location(location))
@@ -193,7 +195,7 @@ class DiscreteAuralSpace(AuralSpace):
     def _save_out_cache(self):
         print "SAVING OUT THE CACHE! YAY! IT WORKED!"
         if not self.astfs:
-            print "...but there's nothing to save. :("
+            print "...but there's nothing to save. aw." 
             return
         plot_things = []
         for astf in self.astfs:
@@ -234,7 +236,62 @@ class DiscreteEarDelayAS(DiscreteAuralSpace, EarDelayAuralSpace):
                 key=lambda l:l.cosine_distance_to(Location(location)))[:n]
 
 
+class KemarAuralSpace(DiscreteAuralSpace):
+    hrtf_dir = os.path.join(os.path.expanduser('~'), ".mu-sp", "hrtf", "kemar")
+    hrtf_avg_energy = 62000.0
 
-discretized_delay_as = lambda rate: DiscreteEarDelayAS("ddas", rate)
+    def __init__(self, name, rate):
+        # init and load HRTFs from cache
+        super(self.__class__, self).__init__(name, rate)
+        self.files_for_locs = {}
+        plot_things = []
+        for filename in os.listdir(KemarAuralSpace.hrtf_dir):
+            iH = filename.index('H')
+            ie = filename.index('e')
+            ia = filename.index('a')
+            elevation_deg, attitude_deg = float(filename[iH + 1:ie]), -float(filename[ie + 1:ia])
+            print elevation_deg, attitude_deg
+            loc = Location((radians(attitude_deg), radians(elevation_deg)), 1.4)
+            plot_things.append([c for c in loc])
+            self.files_for_locs[loc.cache_tag()] = loc, filename
+            mirror_loc = loc.right_half_plane()
+            plot_things.append([c for c in mirror_loc])
+            self.files_for_locs[mirror_loc.cache_tag()] = mirror_loc, filename
+
+        # build all remaining HRTFs
+        for loc, filename in self.files_for_locs.values():
+            if not self._saved_astf_for_location(loc):
+                self.astfs.append(self._create_astf(loc))
+
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+        ax.scatter(*zip(*plot_things))
+
+        plt.show()
+
+    def _create_astf(self, location):
+        block_length = self.rate *.5
+        loc, filename = self.files_for_locs[location.cache_tag()]
+        if not loc == location:
+            print "Something went terribly wrong."
+            exit()
+        path = os.path.join(KemarAuralSpace.hrtf_dir, filename)
+        def kas_generate_astf():
+            filerate, data = wavfile.read(path)
+            impulse_data = np.transpose(np.array(data)).astype(np.float) / (2**15 *
+                    np.sqrt(KemarAuralSpace.hrtf_avg_energy))
+            #print "energy:", np.sum(impulse_data**2) * 2**15
+            if not location.right_half_plane() == location:
+                impulse_data = impulse_data[::-1,:] # flip left and right
+            hrtf_data = np.fft.rfft(np.hstack((impulse_data, np.zeros((2, block_length)))))
+            #plt.plot(impulse_data[0])
+            #plt.show()
+            return hrtf_data, impulse_data.shape[1]
+
+        return ASTF(kas_generate_astf, location)
+
+
+
+
 
 KEMAR_aural_space = lambda rate: DiscreteAuralSpace("KEMAR", rate)

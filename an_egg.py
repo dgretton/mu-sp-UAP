@@ -15,7 +15,8 @@ def rhlib(rh_name):
     return os.path.join(datadir, "rhythm/an_egg_rh", rh_name + ".rh")
 
 def loctrans(far, angle):
-    return Location((angle, 0), far)
+    #return Location((angle, 0), far)
+    return Location((random()*pi*2, random()*pi*2,), 2)
 
 def halftones_for_scale_deg(degree):
     semitones = [0, 2, 3, 5, 7, 8, 10][int(degree) - 1]

@@ -1,4 +1,4 @@
-from musp import Track, Location, EarDelayAuralSpace, DiscreteEarDelayAS, discretized_delay_as
+from musp import Track, Location, EarDelayAuralSpace, DiscreteEarDelayAS, KemarAuralSpace
 import os, contextlib, wave
 import numpy as np
 from math import sqrt, atan2, log, pi
@@ -9,7 +9,8 @@ class Sound:
 
     quick_play = False
     default_rate = 44100
-    default_aural_space = discretized_delay_as(default_rate)
+    default_aural_space = KemarAuralSpace('whatifitworks', default_rate)
+            #DiscreteEarDelayAS('default', default_rate)
 
     class CacheStatus:
         hits_before_cache = 2

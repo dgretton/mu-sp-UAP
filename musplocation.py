@@ -35,13 +35,14 @@ class Location:
             x, y, z = self._cartesian
             s = sqrt(x*x + y*y)
             r = sqrt(s*s + z*z)
-            self._spherical = (arctan2(y, x), arctan2(z, s)), r
+            self._spherical = (arctan2(x, y), arctan2(z, s)), r
         return self._spherical
 
     def cartesian(self):
         if not self._cartesian:
             ((theta, phi), r) = self._spherical
-            self._cartesian = r*cos(theta)*cos(phi), r*sin(theta)*cos(phi), r*sin(phi)
+            # theta = phi = 0 is straight "ahead," at (0, 1, 0)
+            self._cartesian = r*sin(theta)*cos(phi), r*cos(theta)*cos(phi), r*sin(phi)
         return self._cartesian
 
     def delays_to_ears(self):
@@ -75,7 +76,7 @@ class Location:
 
     @staticmethod
     def cosine_distance(l1, l2):
-        return l2.cosine_distance(l1)
+        return l2.cosine_distance_to(l1)
 
     def cache_tag(self):
         (theta, phi), r = self.spherical()
@@ -97,9 +98,6 @@ class Location:
 
     def __add__(self, other):
         return Location(*[cs + co for cs, co in zip(self.cartesian(), other.cartesian())])
-        #xs, ys, zs = self.cartesian()
-        #xo, yo, zo = other.cartesian()
-        #return Location(xs + xo, ys + yo, zs + zo
     
     def __eq__(self, other):
         return self.cartesian_distance_to(other) < .0001
