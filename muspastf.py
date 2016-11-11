@@ -62,18 +62,29 @@ class AuralSpace(object):
 
     def apply_decays(self, astf_data, location, start_location=None):
         decays = np.array(zip(Location(location).decays_at_ears()))
+        print "Here be the decays:", decays
         if start_location is not None:
             decays /= np.array(zip(start_location.decays_at_ears()))
         return astf_data * decays
 
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.plot([0, 0, 0], [0, 10, 0], linewidth=5)
+    
     def correct_delays(self, astf_data, ir_length, location,
-            max_delay_samples=None, start_location=None):
+            max_delay_samples=None, start_location=None, ax=ax):
+        x, y, z = location
+        ax.scatter([x], [y], [z])
         delays = np.array(zip(Location(location).delays_to_ears()))*self.rate
         if start_location is not None:
             if start_location == location:
                 return astf_data, ir_length
             # neg delay shift ok if correctly cached
             delays -= np.array(zip(Location(start_location).delays_to_ears()))*self.rate
+            xs, ys, zs = start_location
+            ax.scatter([xs], [ys], [zs])
+            ax.plot([x, xs], [y, ys], [z, zs], linewidth=min(5, 5.0/(float(max(delays))*.01)))#color=(.1, .5, float(max(delays))*.001))
+
         if max_delay_samples is not None:
             def compression_func(x):
                 return np.where(x>0, x/(exp(x) + x), x)
@@ -96,7 +107,7 @@ class EarDelayAuralSpace(AuralSpace):
     def _create_astf(self, location):
         # use a relatively long block, within an order of a second
         block_samples = int(self.rate * .5)
-        # use 10% more samples than needed for the maximum delay
+        # use 20% more samples than needed for the maximum delay
         delayr, delayl = location.delays_to_ears()
         impulse_samples = int(max(delayr*self.rate, delayl*self.rate)*1.2)
 
@@ -143,8 +154,8 @@ class DiscreteAuralSpace(AuralSpace):
                     location = Location(float(x), float(y), float(z))
                     self.astfs.append(ASTF(astf_data_generator, location, filename))
         print "ALL OF THESE GREAT THINGS WERE ADDED RIGHT AT THE BEGINNING:"
-        for astf in self.astfs:
-            print astf
+        #for astf in self.astfs:
+        #    print astf
         atexit.register(self._save_out_cache)
 
     def astf_for_location(self, location):
@@ -193,18 +204,20 @@ class DiscreteAuralSpace(AuralSpace):
         return self.name + '_' + '_'.join(['%.3f'%c for c in [t, p, r]]) + ".astfdata"
 
     def _save_out_cache(self):
+        plt.show()
+        exit()
         print "SAVING OUT THE CACHE! YAY! IT WORKED!"
         if not self.astfs:
             print "...but there's nothing to save. aw." 
             return
         plot_things = []
-        for astf in self.astfs:
-            print astf
-            plot_things.append([c for c in astf.location])
-        fig = plt.figure()
-        ax = fig.add_subplot(111, projection='3d')
-        ax.scatter(*zip(*plot_things))
-        plt.show()
+        #for astf in self.astfs:
+        #    print astf
+        #    plot_things.append([c for c in astf.location])
+        #fig = plt.figure()
+        #ax = fig.add_subplot(111, projection='3d')
+        #ax.scatter(*zip(*plot_things))
+        #plt.show()
         if not os.path.exists(self.unique_cache_dir):
             print "making new cache directory for aural space " + self.name
             os.mkdir(self.unique_cache_dir)
@@ -235,10 +248,20 @@ class DiscreteEarDelayAS(DiscreteAuralSpace, EarDelayAuralSpace):
         return sorted(DiscreteEarDelayAS.points,
                 key=lambda l:l.cosine_distance_to(Location(location)))[:n]
 
+#    def _astf_post_processor(self, location):
+#        def null_post_processor(loc, data_from_cache, ir_len):
+#            ret = np.zeros(np.fft.irfft(data_from_cache).shape)
+#            ret[:,0] = 100
+#            ret[:,1] = 0
+#            ret /= np.sqrt(np.sum(ret**2)/2)
+#            ret = np.fft.rfft(ret)
+#            return (ret, ir_len)
+#        return null_post_processor
+
 
 class KemarAuralSpace(DiscreteAuralSpace):
     hrtf_dir = os.path.join(os.path.expanduser('~'), ".mu-sp", "hrtf", "kemar")
-    hrtf_avg_energy = 62000.0
+    hrtf_avg_energy = .6
 
     def __init__(self, name, rate):
         # init and load HRTFs from cache
@@ -251,7 +274,7 @@ class KemarAuralSpace(DiscreteAuralSpace):
             ia = filename.index('a')
             elevation_deg, attitude_deg = float(filename[iH + 1:ie]), -float(filename[ie + 1:ia])
             print elevation_deg, attitude_deg
-            loc = Location((radians(attitude_deg), radians(elevation_deg)), 1.4)
+            loc = Location((radians(attitude_deg), radians(elevation_deg)), .2)
             plot_things.append([c for c in loc])
             self.files_for_locs[loc.cache_tag()] = loc, filename
             mirror_loc = loc.right_half_plane()
@@ -263,14 +286,14 @@ class KemarAuralSpace(DiscreteAuralSpace):
             if not self._saved_astf_for_location(loc):
                 self.astfs.append(self._create_astf(loc))
 
-        fig = plt.figure()
-        ax = fig.add_subplot(111, projection='3d')
-        ax.scatter(*zip(*plot_things))
+        #fig = plt.figure()
+        #ax = fig.add_subplot(111, projection='3d')
+        #ax.scatter(*zip(*plot_things))
 
-        plt.show()
+        #plt.show()
 
     def _create_astf(self, location):
-        block_length = self.rate *.5
+        block_length = self.rate * .05
         loc, filename = self.files_for_locs[location.cache_tag()]
         if not loc == location:
             print "Something went terribly wrong."
@@ -278,17 +301,25 @@ class KemarAuralSpace(DiscreteAuralSpace):
         path = os.path.join(KemarAuralSpace.hrtf_dir, filename)
         def kas_generate_astf():
             filerate, data = wavfile.read(path)
-            impulse_data = np.transpose(np.array(data)).astype(np.float) / (2**15 *
-                    np.sqrt(KemarAuralSpace.hrtf_avg_energy))
-            #print "energy:", np.sum(impulse_data**2) * 2**15
+            raw_data = np.transpose(np.array(data))
+            unit_size_data = raw_data.astype(np.float) / (2**15)
+            energy = KemarAuralSpace.hrtf_avg_energy #np.sum(unit_size_data**2)/2.0 # avg energy between the two tracks
+            print "THE ENERGY:", energy
+            impulse_data = unit_size_data #/np.sqrt(energy) # normalize by RMS
             if not location.right_half_plane() == location:
-                impulse_data = impulse_data[::-1,:] # flip left and right
+                impulse_data = impulse_data[::-1,:] # flip left and right channels
             hrtf_data = np.fft.rfft(np.hstack((impulse_data, np.zeros((2, block_length)))))
             #plt.plot(impulse_data[0])
             #plt.show()
             return hrtf_data, impulse_data.shape[1]
 
         return ASTF(kas_generate_astf, location)
+
+
+#    def _astf_post_processor(self, location):
+#        def null_post_processor(loc, data_from_cache, ir_len):
+#            return (data_from_cache*.1, ir_len)
+#        return null_post_processor
 
 
 

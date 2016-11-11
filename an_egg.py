@@ -14,9 +14,14 @@ def aulib(sound_dir):
 def rhlib(rh_name):
     return os.path.join(datadir, "rhythm/an_egg_rh", rh_name + ".rh")
 
-def loctrans(far, angle):
-    #return Location((angle, 0), far)
-    return Location((random()*pi*2, random()*pi*2,), 2)
+def loctrans(far, angle, mem=[0, 0, 1]):
+    #return Location((random()*pi*2, random()*pi*2,), .5)
+    mem[0] += pi*2/80.1
+    mem[1] += pi*2/40
+    mem[2] += .5/mem[2]
+    #return Location((angle, mem[1]), far)
+    return Location((mem[0], mem[1]), mem[2])
+
 
 def halftones_for_scale_deg(degree):
     semitones = [0, 2, 3, 5, 7, 8, 10][int(degree) - 1]
@@ -63,7 +68,7 @@ def crystal_sounding(beat):
     beats = crys1_root.interleave_split(char_times)['j']
     
     for b, deg in zip(beats, part1):
-        b.attach(crystal_sound.for_pitch(4*deg_freq(int(deg))), loctrans(4, pi/2))
+        b.attach(SpreadSound(crystal_sound.for_pitch(2*deg_freq(int(deg))), (.1, .1, .1), .02, 3), loctrans(4, pi/2))
 
     return [crys1]
 
@@ -187,7 +192,7 @@ mid_drum = SpreadSound(random_mid_drum, (.2, .2, 0), 0, 1)
 def descending_snaresoff_tuple(beat, n):
     beats = [beat] if n is 1 else beat.split_even(n)
     for b, i in zip(beats, range(n, 0, -1)):
-        b.attach(mid_drum, loctrans(i + .2, pi*10/3*i))
+        b.attach(mid_drum, loctrans(i + .2, pi*2/12*i))
 
 def mid_drum_rhythm(beat):
     drum = Track("Snares off please", Sound.default_rate)

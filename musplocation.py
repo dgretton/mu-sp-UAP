@@ -56,8 +56,8 @@ class Location:
     def dists_to_ears(self):
         if not self.eardists:
             x, y, z = self.cartesian()
-            left_dist = sqrt((x + Location.ear_separation / 2)**2 + y*y)
-            right_dist = sqrt((x - Location.ear_separation / 2)**2 + y*y)
+            left_dist = sqrt((x + Location.ear_separation / 2)**2 + y*y + z*z)
+            right_dist = sqrt((x - Location.ear_separation / 2)**2 + y*y + z*z)
             self.eardists = left_dist, right_dist
         return self.eardists
 
@@ -72,7 +72,7 @@ class Location:
         return self.cartesian_distance_to((0, 0, 0))
 
     def cosine_distance_to(self, other):
-        return sum([cs*co for cs, co in zip(self, other)])/(self.norm()*other.norm())
+        return 1.0 - sum([cs*co for cs, co in zip(self, other)])/(self.norm()*other.norm())
 
     @staticmethod
     def cosine_distance(l1, l2):

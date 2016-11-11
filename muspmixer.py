@@ -5,7 +5,7 @@ import numpy as np
 
 class Mixer:
 
-    attenuation_boost = 2
+    attenuation_boost = 1
 
     def __init__(self, name, rate=Sound.default_rate, tracks=[]):
         self.name = name
