@@ -69,7 +69,12 @@ class AuralSpace(object):
 
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
-    ax.plot([0, 0, 0], [0, 10, 0], linewidth=5)
+    ax.autoscale(enable=False,axis='both')
+    ax.set_xbound(-10, 10)
+    ax.set_ybound(-10, 10)
+    ax.set_zbound(-10, 10)
+    ax.plot([0, 0], [0, 9], [0, 0], linewidth=5)
+    ax.plot([0, 0], [0, 0], [0, 9], linewidth=5)
     
     def correct_delays(self, astf_data, ir_length, location,
             max_delay_samples=None, start_location=None, ax=ax):
