@@ -97,7 +97,7 @@ class EarDelayAuralSpace(AuralSpace):
 
     def _create_astf(self, location):
         # use a relatively long block, within an order of a second
-        block_samples = int(self.rate * .5)
+        block_samples = int(self.rate * .05)
         # use 20% more samples than needed for the maximum delay
         delayr, delayl = location.delays_to_ears()
         impulse_samples = int(max(delayr*self.rate, delayl*self.rate)*1.2)
