@@ -90,7 +90,7 @@ class Location:
         return Location(abs(x), y, z)
 
     def __str__(self):
-        return "AS loc " + str(self.cartesian())
+        return "AS loc " + str(tuple("%.3f" % c for c in self.cartesian()))
 
     def __iter__(self):
         for c in self.cartesian():

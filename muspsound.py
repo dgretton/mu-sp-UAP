@@ -9,9 +9,7 @@ class Sound:
 
     quick_play = False
     default_rate = 44100
-    default_aural_space = (
-            #DiscreteEarDelayAS('default', default_rate))
-            KemarAuralSpace('whatifitworks', default_rate))
+    default_aural_space = KemarAuralSpace('whatifitworks', default_rate)
 
     class CacheStatus:
         hits_before_cache = 2
@@ -71,12 +69,6 @@ class Sound:
         if astf is None:
             astf = self.default_aural_space.astf_for_location(location)
         astf_data, impulse_response_length = astf.generate_astf()
-        #plt.plot(np.fft.irfft(astf_data[0]))
-        #plt.plot(np.fft.irfft(astf_data[1]))
-        #plt.show()
-        #exit()
-        print astf_data
-        pre_energy = np.sum(np.sqrt(mono_data**2))
         mono_data_length = mono_data.shape[0]
         # astf is from rfft, so applies to 2x as many pts:
         transform_buffer_length = 2*(astf_data.shape[1] - 1)
@@ -86,13 +78,8 @@ class Sound:
         output_buffer = np.zeros((2, output_length))
 
         for block_start in range(0, output_length, block_length):
-            print "um, this isn't negative, is it? ir_length:", impulse_response_length
-            print block_length
             mono_block_data = list(mono_data[block_start:block_start + block_length])
             mono_block_size = len(mono_block_data)
-            print "so the mono data size is", mono_block_size
-            print "and the size it ought to take up in the buffer is", mono_block_size + impulse_response_length - 1
-            print "and the transform buffer is this big:", transform_buffer.shape[1]
             if mono_block_size == 0:
                 continue
             transform_buffer[0,:mono_block_size] = mono_block_data
@@ -103,8 +90,6 @@ class Sound:
             output_buffer[:,block_start:block_start + transform_buffer_length] += \
                     transform_buffer[:,:mono_block_size + impulse_response_length - 1]
 
-        post_energy = np.sum(np.sqrt(output_buffer**2))/2
-        print "pre- and post- energies:", pre_energy, post_energy
         return output_buffer
 
     def _read_mono_data(self, filename):

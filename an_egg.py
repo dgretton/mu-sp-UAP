@@ -14,14 +14,9 @@ def aulib(sound_dir):
 def rhlib(rh_name):
     return os.path.join(datadir, "rhythm/an_egg_rh", rh_name + ".rh")
 
-def loctrans(far, angle, mem=[0, 0, 1]):
-    #return Location((random()*pi*2, random()*pi*2,), .5)
-    mem[0] += pi*2/80.1
-    mem[1] += pi*2/40
-    mem[2] += .5/mem[2]
-    #return Location((angle, mem[1]), far)
-    return Location((mem[0], mem[1]), mem[2])
-
+def loctrans(far, angle, mem=[0]):
+    mem[0] += pi*2/2000
+    return Location((angle, mem[0]), far)
 
 def halftones_for_scale_deg(degree):
     semitones = [0, 2, 3, 5, 7, 8, 10][int(degree) - 1]
@@ -68,7 +63,7 @@ def crystal_sounding(beat):
     beats = crys1_root.interleave_split(char_times)['j']
     
     for b, deg in zip(beats, part1):
-        b.attach(SpreadSound(crystal_sound.for_pitch(2*deg_freq(int(deg))), (.1, .1, .1), .02, 3), loctrans(4, pi/2))
+        b.attach(SpreadSound(crystal_sound.for_pitch(4*deg_freq(int(deg))), (.1, .1, .1), .02, 3), loctrans(4, pi/2))
 
     return [crys1]
 
