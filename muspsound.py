@@ -151,16 +151,11 @@ class RandomSound(Sound):
             self.cache_status = Sound.CacheStatus.instant_cache
         else:
             self.cache_status = Sound.CacheStatus.no_cache
-        self.shuffle_list = self.sounds[:]
-        random.shuffle(self.shuffle_list)
+        self.shuffle_list = []
+        self._shuffle()
 
     def _render_from(self, location):
-        if not self.shuffle_list:
-            new_shuffle_list = self.sounds[:]
-            random.shuffle(new_shuffle_list)
-            for s in new_shuffle_list:
-                self.shuffle_list.append(s)
-        print len(self.shuffle_list)
+        self._shuffle()
         some_random_sound = self.shuffle_list.pop() #self.sounds[np.random.randint(len(self.sounds))]
         return some_random_sound.render_from(location)
 
@@ -181,7 +176,16 @@ class RandomSound(Sound):
             self.set_unique_rate(new_raw_sound.rate)
             self.sounds.append(new_raw_sound)
         self.update_cache_tag(self.sounds)
+        self._shuffle()
         return self
+
+    def _shuffle(self):
+        if len(self.shuffle_list) < len(self.sounds):
+            new_shuffle_list = self.sounds[:]
+            random.shuffle(new_shuffle_list)
+            for s in new_shuffle_list:
+                self.shuffle_list.append(s)
+
 
 class SpreadSound(Sound):
 
@@ -489,8 +493,8 @@ class RandomPitchedSound(RandomSound, PitchedSound):
             self.cache_status = Sound.CacheStatus.instant_cache
         else:
             self.cache_status = Sound.CacheStatus.no_cache
-        self.shuffle_list = self.sounds[:]
-        random.shuffle(self.shuffle_list)
+        self.shuffle_list = []
+        self._shuffle()
 
     def populate_with_dir(self, dir):
         for file_name in os.listdir(dir):
