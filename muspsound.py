@@ -1,5 +1,5 @@
 from musp import Track, Location, EarDelayAuralSpace, DiscreteEarDelayAS, KemarAuralSpace
-import os, contextlib, wave
+import os, contextlib, wave, random
 import numpy as np
 from math import sqrt, atan2, log, pi
 import scipy.io.wavfile as wavfile
@@ -151,9 +151,17 @@ class RandomSound(Sound):
             self.cache_status = Sound.CacheStatus.instant_cache
         else:
             self.cache_status = Sound.CacheStatus.no_cache
+        self.shuffle_list = self.sounds[:]
+        random.shuffle(self.shuffle_list)
 
     def _render_from(self, location):
-        some_random_sound = self.sounds[np.random.randint(len(self.sounds))]
+        if not self.shuffle_list:
+            new_shuffle_list = self.sounds[:]
+            random.shuffle(new_shuffle_list)
+            for s in new_shuffle_list:
+                self.shuffle_list.append(s)
+        print len(self.shuffle_list)
+        some_random_sound = self.shuffle_list.pop() #self.sounds[np.random.randint(len(self.sounds))]
         return some_random_sound.render_from(location)
 
     def duration(self):
@@ -481,6 +489,8 @@ class RandomPitchedSound(RandomSound, PitchedSound):
             self.cache_status = Sound.CacheStatus.instant_cache
         else:
             self.cache_status = Sound.CacheStatus.no_cache
+        self.shuffle_list = self.sounds[:]
+        random.shuffle(self.shuffle_list)
 
     def populate_with_dir(self, dir):
         for file_name in os.listdir(dir):
