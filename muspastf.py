@@ -179,7 +179,9 @@ class DiscreteAuralSpace(AuralSpace):
             delayed, mod_ir_len = self.correct_delays(data_from_cache, ir_len, destination_location,
                     max_delay_samples=(filter_length - ir_len), start_location=loc)
             decayed = self.apply_decays(delayed, destination_location, start_location=loc)
+            #decayed = self.apply_decays(data_from_cache, destination_location, start_location=loc)
             return (decayed, mod_ir_len)
+            #return (decayed, ir_len)
         return vanilla_post_processor
 
     def _saved_astf_for_location(self, location):
@@ -259,6 +261,7 @@ class KemarAuralSpace(DiscreteAuralSpace):
             exit()
         path = os.path.join(KemarAuralSpace.hrtf_dir, filename)
         def kas_generate_astf():
+            print filename
             filerate, data = wavfile.read(path)
             raw_data = np.transpose(np.array(data))
             unit_size_data = raw_data.astype(np.float) / (2**15)
