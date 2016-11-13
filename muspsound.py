@@ -30,7 +30,9 @@ class Sound:
     def render_from(self, location, universal_cache={}):
         if self.cache_status == Sound.CacheStatus.no_cache:
             return self._render_from(location)
-        tag = self.cache_tag + Location(location).cache_tag()
+        tag = self.cache_tag
+        if location is not None:
+            tag += Location(location).cache_tag()
         if self.cache_status == Sound.CacheStatus.instant_cache:
             cached = universal_cache.get(tag, self._render_from(location))
             universal_cache[tag] = cached
@@ -126,6 +128,8 @@ class RawSound(Sound):
 
     def _render_from(self, location):
         mono_data = self._read_mono_data(self.file_path)
+        if location is None:
+            return (self.reg_pt, mono_data)
         return (self.reg_pt, self._to_stereo(self.rate, mono_data, location))
 
     def duration(self):
@@ -309,12 +313,12 @@ class RandomIntervalSound(Sound):
 
     def _render_from(self, location):
         if self.data is None:
-            self.data = self.sound.render_from((0, Location.standard_distance, 0))[1][0] #  ignore reg pt; take one track; remember it
-        total_samples = len(self.data)
+            self.data = self.sound.render_from(None)[1] # ignore reg pt; only mono; remember it
+        total_samples = self.data.size
         samples = int(self.interval * self.rate)
         unclaimed_samples = samples
         supplementary_intervals = []
-        cap_size = len(self.cap)
+        cap_size = self.cap.size
         while unclaimed_samples > total_samples/2:
             interval_size = np.random.randint(cap_size * 2, total_samples/2)
             unclaimed_samples -= (interval_size - cap_size)
@@ -325,13 +329,15 @@ class RandomIntervalSound(Sound):
             mono_data = np.concatenate((mono_data[: -cap_size],
                 mono_data[-cap_size :] + subinterval[: cap_size],
                 subinterval[cap_size :]))
+        if location is None:
+            return (0.0, mono_data)
         return (0.0, self._to_stereo(self.rate, mono_data, location))
 
     def random_data_of_length(self, length):
-        random_position = np.random.randint(len(self.data) - length)
+        random_position = np.random.randint(self.data.size - length)
         interval_data = np.array(self.data[random_position :
             random_position + length])
-        eff_cap_size = min(len(self.cap), length)
+        eff_cap_size = min(self.cap.size, length)
         cap = self.cap[: eff_cap_size]
         interval_data[: eff_cap_size] = cap * interval_data[: eff_cap_size]
         interval_data[-eff_cap_size :] = cap[::-1] * \
@@ -364,9 +370,9 @@ class ResampledSound(Sound):
 
     def _render_from(self, location):
         block_size = 10000
-        reg_pt, sound_data = self.sound.render_from(location)
-        index_counter = np.arange(sound_data.shape[1])
-        resampled_data = np.array([[],[]])
+        reg_pt, sound_data = self.sound.render_from(None)
+        index_counter = np.arange(sound_data.size)
+        resampled_data = np.array([])
         end_marker = 2 # outside range of audio data
         # negative times
         i = -1
@@ -375,21 +381,19 @@ class ResampledSound(Sound):
         while not stop:
             interp_offsets, next_pt = self._points_for_block(block_size, i)
             interp_points = interp_offsets - next_pt + mark # i_off[-1] is the maximum
-            block_left = np.interp(interp_points, index_counter, sound_data[0], left=end_marker)
-            block_right = np.interp(interp_points, index_counter, sound_data[1], left=end_marker)
-            if block_left[0] == end_marker:
-                block_left = block_left[block_left != end_marker]
-                if len(block_left) > 0:
-                    block_right = block_right[-block_left.size:]
+            resampled_block = np.interp(interp_points, index_counter, sound_data, left=end_marker)
+            if resampled_block[0] == end_marker:
+                resampled_block = resampled_block[resampled_block != end_marker]
+                if resampled_block.size > 0:
+                    resampled_block = resampled_block[-resampled_block.size:]
                 else:
-                    block_right = np.array([])
+                    resampled_block = np.array([])
                 stop = True
-            block = np.vstack((block_left, block_right))
-            resampled_data = np.hstack((block, resampled_data))
+            resampled_data = np.hstack((resampled_block, resampled_data))
             mark = interp_points[0]
             i -= 1
 
-        new_reg_pt = float(resampled_data.shape[1])/self.rate
+        new_reg_pt = float(resampled_data.size)/self.rate
 
         # positive times
         i = 0
@@ -398,22 +402,23 @@ class ResampledSound(Sound):
         while not stop:
             interp_offsets, next_pt = self._points_for_block(block_size, i)
             interp_points = interp_offsets + mark
-            block_left = np.interp(interp_points, index_counter, sound_data[0], right=end_marker)
-            block_right = np.interp(interp_points, index_counter, sound_data[1], right=end_marker)
-            if block_left[-1] == end_marker:
-                block_left = block_left[block_left != end_marker]
-                block_right = block_right[:block_left.size]
+            resampled_block = np.interp(interp_points, index_counter, sound_data,
+                    right=end_marker)
+            if resampled_block[-1] == end_marker:
+                resampled_block = resampled_block[resampled_block != end_marker]
                 stop = True
-            block = np.vstack((block_left, block_right))
-            resampled_data = np.hstack((resampled_data, block))
+            resampled_data = np.hstack((resampled_data, resampled_block))
             mark = interp_points[0] + next_pt
             i += 1
-        return (new_reg_pt, resampled_data)
+        if location is None:
+            return (new_reg_pt, resampled_data)
+        return (new_reg_pt, self._to_stereo(self.rate, resampled_data, location))
 
     def _points_for_block(self, block_size, block_number):
         block_start_index = block_size * block_number
         block_end_index = block_start_index + block_size
-        intervals = self.freq_func(np.arange(block_start_index, block_end_index).astype(np.float)/self.rate)
+        intervals = self.freq_func(np.arange(block_start_index,
+            block_end_index).astype(np.float)/self.rate)
         summed = np.cumsum(intervals)
         resample_points = np.hstack(([0], summed[:-1]))
         next_point = summed[-1]
