@@ -61,13 +61,16 @@ class Sound:
     def set_default_aural_space(self, aural_space):
         self.default_aural_space = aural_space
 
-    def _to_stereo(self, rate, mono_data, location, astf=None):
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    def _to_stereo(self, rate, mono_data, location, astf=None, ax=ax):
         if(Sound.quick_play):
             decays = np.array(zip(Location(location).decays_at_ears()))
             delays = np.array(zip(Location(location).delays_to_ears()))
             quick_data = np.hstack((np.zeros((int(delays.max() * rate) + 1,)), mono_data))
             return np.vstack((quick_data, quick_data)) * decays
 
+        ax.scatter(*zip(location))
         if astf is None:
             astf = self.default_aural_space.astf_for_location(location)
         astf_data, impulse_response_length = astf.generate_astf()

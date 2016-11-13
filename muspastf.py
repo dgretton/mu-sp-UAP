@@ -195,6 +195,7 @@ class DiscreteAuralSpace(AuralSpace):
         return self.name + '_' + '_'.join(['%.3f'%c for c in [t, p, r]]) + ".astfdata"
 
     def _save_out_cache(self):
+        plt.show()
         print "SAVING OUT THE CACHE! YAY! IT WORKED!"
         if not self.astfs:
             print "...but there's nothing to save. aw." 
