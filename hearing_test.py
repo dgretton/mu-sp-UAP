@@ -5,7 +5,7 @@ from itertools import product, repeat
 from mpl_toolkits.mplot3d import Axes3D
 
 delay = .5
-batch_interval = 7
+batch_interval = 2
 batch_num = 7
 
 datadir = os.path.expanduser("~/.mu-sp")
@@ -14,8 +14,8 @@ def aulib(sound_dir):
     return os.path.join(datadir, "audio", sound_dir)
 
 cube_size = 4
-#test_locs = list(enumerate([Location(x, y, z) for z, x, y in product([-cube_size, cube_size], repeat=3)]))
-test_locs = list(enumerate(Location(0, -3, 0) for i in range(5)))
+test_locs = list(enumerate([Location(x, y, z) for z, x, y in product([-cube_size, cube_size], repeat=3)]))
+#test_locs = list(enumerate(Location(0, -3, 0) for i in range(5)))
 random.shuffle(test_locs)
 plot_pts = []
 print "test point order:"
