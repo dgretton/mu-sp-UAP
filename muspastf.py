@@ -4,7 +4,7 @@ import numpy as np
 import scipy.io.wavfile as wavfile
 from numpy import exp, pi
 from mpl_toolkits.mplot3d import Axes3D
-from math import radians, degrees
+from math import radians, degrees, log
 from musp import Location
 
 class ASTF:
@@ -97,15 +97,17 @@ class EarDelayAuralSpace(AuralSpace):
 
     def _create_astf(self, location):
         # use a relatively long block, within an order of a second
-        block_samples = int(self.rate * .05)
+        min_block_samples = int(self.rate * .05)
         # use 20% more samples than needed for the maximum delay
         delayr, delayl = location.delays_to_ears()
         impulse_samples = int(max(delayr*self.rate, delayl*self.rate)*1.2)
+        # complete astf will have minimum possible power of 2 length for efficient fft
+        overall_samples = 2*2**int(log(min_block_samples + impulse_samples, 2))
 
         def edas_astf_generator():
-            tabula_rasa = np.ones((2, (block_samples + impulse_samples)/2 + 1))
+            tabula_rasa = np.ones((2, (overall_samples)/2 + 1))
             delayed, mod_ir_length = self.correct_delays(tabula_rasa, impulse_samples,
-                    location, max_delay_samples=block_samples)
+                    location, max_delay_samples=(overall_samples - impulse_samples))
             decayed = self.apply_decays(delayed, location)
             return decayed, mod_ir_length
 
@@ -252,7 +254,7 @@ class KemarAuralSpace(DiscreteAuralSpace):
                 self.astfs.append(self._create_astf(loc))
 
     def _create_astf(self, location):
-        block_length = self.rate * .05
+        min_block_length = self.rate * .05
         loc, filename = self.files_for_locs[location.cache_tag()]
         if not loc == location:
             print "Something went terribly wrong."
@@ -266,7 +268,12 @@ class KemarAuralSpace(DiscreteAuralSpace):
             impulse_data = unit_size_data/np.sqrt(energy) # normalize by RMS
             if not location.right_half_plane() == location:
                 impulse_data = impulse_data[::-1,:] # flip left and right channels
-            hrtf_data = np.fft.rfft(np.hstack((impulse_data, np.zeros((2, block_length)))))
+
+            # complete astf will have minimum possible power of 2 length for efficient fft
+            impulse_len = impulse_data.shape[1]
+            overall_samples = 2*2**int(log(min_block_length + impulse_len, 2))
+            hrtf_data = np.fft.rfft(np.hstack((impulse_data,
+                np.zeros((2, overall_samples - impulse_len)))))
             return hrtf_data, impulse_data.shape[1]
 
         return ASTF(kas_generate_astf, location)
